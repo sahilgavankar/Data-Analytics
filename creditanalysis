@@ -1,0 +1,64 @@
+#Credit Analysis using Machine Learning
+
+library(caret)
+
+credit<-read.csv("credit.csv")
+credit$default[credit$default==2]<-"yes"
+credit$default[credit$default==1]<-"no"
+
+credit$default<-as.factor(credit$default)
+
+#Splitting data into training set and testing set 
+validationIndex<-createDataPartition(credit$default, p=0.8,list=FALSE)
+creditValidation<-credit[-validationIndex,]
+credit<-credit[validationIndex,]
+
+#Developing a models using C50 to predict if a consumer may default
+library(C50)
+
+vars<-c(colnames(credit[,1:20]))
+
+c50fit <- C5.0(x = credit[, vars], y = credit$default)
+summary(c50fit)
+plot(c50fit)
+
+c50fitboosted <- C5.0(x = credit[, vars], y = credit$default, trials=4)
+summary(c50fitboosted)
+plot(c50fitboosted)
+
+c50fitrules <- C5.0(x = credit[, vars], y = credit$default, rules=TRUE)
+summary(c50fitrules)
+
+predictdefault<-predict(c50fit, newdata=creditValidation[,vars])
+predictdefault_rules<-predict(c50fitrules, newdata = creditValidation[, vars])
+predictdefault_boosted<-predict(c50fitboosted, newdata = creditValidation[, vars], type = "prob")
+
+#Seeing how well any model performs using test data
+library(gmodels)
+confusionmatrix<-CrossTable(creditValidation$default, predictdefault,
+                            prop.chisq = FALSE, prop.c = FALSE, prop.r = FALSE,
+                            dnn = c("actual default", "predicted default"))
+
+confusionmatrix_rules<-CrossTable(creditValidation$default, predictdefault_rules,
+                                  prop.chisq = FALSE, prop.c = FALSE, prop.r = FALSE,
+                                  dnn = c("actual default", "predicted default"))
+
+
+#Computing the cost for default miscalculation
+mycostmatrix <- matrix(c(0, 1, 4, 0), nrow = 2)
+rownames(mycostmatrix) <- colnames(mycostmatrix) <- c("no", "yes")
+mycostmatrix
+
+costfit <- C5.0(x = creditValidation[, vars], y = creditValidation$default, 
+                costs = mycostmatrix)
+summary(costfit)
+predictdefault_cost<-predict(costfit, newdata = creditValidation[, vars])
+confusionmatrix<-CrossTable(creditValidation$default, predictdefault_cost,
+                            prop.chisq = FALSE, prop.c = FALSE, prop.r = FALSE,
+                            dnn = c("actual default", "predicted default"))
+
+table(predict(costfit, creditValidation[, vars]))
+table(predict(c50fit, creditValidation[, vars]))
+
+#Relative to the first model, the cost sensitive model predicts more defaulters, since the price of incorrectly predicting a defaulter as a non-defaulter is 4 times higher than the opposite scenario.
+
